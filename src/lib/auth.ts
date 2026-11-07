@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSetting, setSetting } from "./db";
 import { allowedEmails, readSessionToken, SESSION_COOKIE } from "./secure";
+import { isDemo } from "./secure-constants";
 
 /**
  * Who may use this instance:
@@ -21,8 +22,7 @@ export async function isAllowed(email: string): Promise<boolean> {
   return owner === e;
 }
 
-/** Demo mode: local-only preview with sample data, never active when a real DATABASE_URL is configured. */
-export const isDemo = () => process.env.DEMO_MODE === "1" && !process.env.DATABASE_URL;
+export { isDemo };
 
 export async function currentUser(): Promise<string | null> {
   if (isDemo()) return "demo@example.com";

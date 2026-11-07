@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, getDb, setDb } from "@/lib/db";
 import { decrypt, encrypt, createSessionToken, readSessionToken } from "@/lib/secure";
+import { isDemo } from "@/lib/secure-constants";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
 import { ingestEmail, nextStatus } from "@/lib/ingest";
 import { companyKey, httpUrl, isPlatformDomain, rolesMatch, rootDomain } from "@/lib/normalize";
@@ -170,6 +171,17 @@ describe("review confirmation", () => {
 });
 
 describe("security helpers", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("only allows demo mode (no sign-in) in a local dev server", async () => {
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("DEMO_MODE", "1");
+    expect(isDemo()).toBe(true);
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isDemo()).toBe(false);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("DATABASE_URL", "postgres://x");
+    expect(isDemo()).toBe(false);
+  });
   it("round-trips encrypted tokens and rejects tampering", async () => {
     const box = encrypt('{"refresh_token":"abc"}');
     expect(box).not.toContain("abc");
