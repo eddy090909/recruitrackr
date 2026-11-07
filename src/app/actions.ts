@@ -62,12 +62,13 @@ export async function addApplication(form: FormData) {
 
 async function setStatus(id: number, status: Status) {
   if (!STATUSES.includes(status)) return;
-  const db = await getDb();
-  const cur = await db.one<{ status: Status }>("SELECT status FROM applications WHERE id = $1", [id]);
-  if (!cur || cur.status === status) return;
-  const now = new Date().toISOString();
-  await db.query("UPDATE applications SET status = $1, last_update_at = $2, updated_at = now() WHERE id = $3", [status, now, id]);
-  await db.query("INSERT INTO status_events(application_id, status, occurred_at) VALUES ($1, $2, $3)", [id, status, now]);
+  await (await getDb()).tx(async (db) => {
+    const cur = await db.one<{ status: Status }>("SELECT status FROM applications WHERE id = $1 FOR UPDATE", [id]);
+    if (!cur || cur.status === status) return;
+    const now = new Date().toISOString();
+    await db.query("UPDATE applications SET status = $1, last_update_at = $2, updated_at = now() WHERE id = $3", [status, now, id]);
+    await db.query("INSERT INTO status_events(application_id, status, occurred_at) VALUES ($1, $2, $3)", [id, status, now]);
+  });
 }
 
 export async function updateApplication(form: FormData) {
