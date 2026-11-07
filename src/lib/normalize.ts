@@ -93,7 +93,8 @@ export function rootDomain(domain: string): string {
 
 export function isPlatformDomain(domain: string): boolean {
   const d = domain.toLowerCase();
-  return PLATFORM_DOMAINS.some((p) => d === p || d.endsWith("." + p));
+  // University career offices (.edu) forward postings; they aren't the hiring company.
+  return d.endsWith(".edu") || PLATFORM_DOMAINS.some((p) => d === p || d.endsWith("." + p));
 }
 
 /** Keep only http(s) links. Links come from email text, so anything else (javascript:, data:) is dropped. */

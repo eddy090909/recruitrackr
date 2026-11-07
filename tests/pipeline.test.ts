@@ -3,7 +3,7 @@ import { createDb, getDb, setDb } from "@/lib/db";
 import { decrypt, encrypt, createSessionToken, readSessionToken } from "@/lib/secure";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
 import { ingestEmail, nextStatus } from "@/lib/ingest";
-import { companyKey, httpUrl, rolesMatch, rootDomain } from "@/lib/normalize";
+import { companyKey, httpUrl, isPlatformDomain, rolesMatch, rootDomain } from "@/lib/normalize";
 import { buildQueries, htmlToText } from "@/lib/gmail";
 import { demoEmails } from "../scripts/demo-emails";
 
@@ -64,6 +64,11 @@ describe("normalization", () => {
     expect(rootDomain("mail.netflix.com")).toBe("netflix.com");
     expect(rolesMatch("Software Engineering Intern, BS, Summer 2027", "Software Engineering Intern")).toBe(true);
     expect(rolesMatch("Data Science Intern", "Software Engineering Intern")).toBe(false);
+  });
+  it("treats job platforms and university career offices as non-company domains", async () => {
+    expect(isPlatformDomain("mail.greenhouse.io")).toBe(true);
+    expect(isPlatformDomain("careers.example.edu")).toBe(true);
+    expect(isPlatformDomain("netflix.com")).toBe(false);
   });
   it("keeps only http(s) links", async () => {
     expect(httpUrl("https://acme.com/form")).toBe("https://acme.com/form");
