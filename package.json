@@ -1,0 +1,37 @@
+{
+  "name": "recruitrackr",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx scripts/demo.ts",
+    "dev:demo": "DEMO_MODE=1 PGLITE_DIR=data/demo-pglite next dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@electric-sql/pglite": "^0.5.15",
+    "googleapis": "^189.0.0",
+    "next": "16.4.5",
+    "postgres": "^4.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.5",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
+  }
+}

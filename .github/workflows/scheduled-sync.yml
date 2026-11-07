@@ -1,0 +1,20 @@
+# Optional: sync every 3 hours for free (Vercel's free plan only allows a daily cron).
+# Add repository secrets APP_URL (e.g. https://recruitrackr-you.vercel.app) and CRON_SECRET to enable.
+name: Scheduled sync
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then echo "APP_URL/CRON_SECRET not set; skipping."; exit 0; fi
+          curl -fsS --max-time 310 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/sync"
