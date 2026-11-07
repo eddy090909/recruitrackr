@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
     const res = NextResponse.redirect(await authUrl(state, req.nextUrl.origin));
     res.cookies.set("oauth_state", state, { httpOnly: true, secure: req.nextUrl.protocol === "https:", sameSite: "lax", maxAge: 600, path: "/" });
     return res;
-  } catch (e) {
-    const msg = encodeURIComponent(e instanceof Error ? e.message : String(e));
-    return NextResponse.redirect(new URL(`/login?error=${msg}`, req.url));
+  } catch {
+    // authUrl only throws when the Google client ID/secret are missing.
+    return NextResponse.redirect(new URL("/login?error=config", req.url));
   }
 }

@@ -2,19 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 import { exchangeCode } from "@/lib/gmail";
 import { isAllowed } from "@/lib/auth";
 import { createSessionToken, SESSION_COOKIE } from "@/lib/secure";
+import type { LoginError } from "@/lib/login-errors";
 
-const fail = (req: NextRequest, msg: string) => NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(msg)}`, req.url));
+const fail = (req: NextRequest, code: LoginError) => NextResponse.redirect(new URL(`/login?error=${code}`, req.url));
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  if (url.searchParams.get("error")) return fail(req, "Google sign-in was cancelled.");
-  if (!code || !state || state !== req.cookies.get("oauth_state")?.value) return fail(req, "Sign-in failed (state mismatch). Try again.");
+  if (url.searchParams.get("error")) return fail(req, "cancelled");
+  if (!code || !state || state !== req.cookies.get("oauth_state")?.value) return fail(req, "state");
 
   try {
     const { email, save } = await exchangeCode(code, url.origin);
-    if (!email || !(await isAllowed(email))) return fail(req, `${email || "This account"} isn't allowed to use this Recruitrackr.`);
+    if (!email || !(await isAllowed(email))) return fail(req, "not_allowed");
     await save();
     const session = createSessionToken(email);
     const res = NextResponse.redirect(new URL("/?connected=1", req.url));
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
     res.cookies.delete("oauth_state");
     return res;
   } catch (e) {
-    return fail(req, e instanceof Error ? e.message : String(e));
+    console.error(`[auth] sign-in failed (${e instanceof Error ? e.name : "unknown error"})`);
+    return fail(req, "failed");
   }
 }

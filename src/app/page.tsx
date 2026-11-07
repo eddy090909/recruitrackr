@@ -23,7 +23,6 @@ const FILTERS: { key: string; label: string }[] = [
 
 async function Banner({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  if (sp.error) return <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{sp.error}</div>;
   if (sp.connected) return <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Gmail connected. Hit <b>Sync now</b> to pull your recruiting emails.</div>;
   return null;
 }

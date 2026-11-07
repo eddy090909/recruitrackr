@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, getDb, setDb } from "@/lib/db";
 import { decrypt, encrypt, createSessionToken, readSessionToken } from "@/lib/secure";
 import { isDemo } from "@/lib/secure-constants";
+import { loginErrorMessage } from "@/lib/login-errors";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
 import { ingestEmail, nextStatus } from "@/lib/ingest";
 import { companyKey, httpUrl, isPlatformDomain, rolesMatch, rootDomain } from "@/lib/normalize";
@@ -172,6 +173,12 @@ describe("review confirmation", () => {
 
 describe("security helpers", () => {
   afterEach(() => vi.unstubAllEnvs());
+  it("shows only known login error messages, never text from the URL", async () => {
+    expect(loginErrorMessage("cancelled")).toBe("Google sign-in was cancelled.");
+    expect(loginErrorMessage("Your account was hacked, go to evil.example")).toBeNull();
+    expect(loginErrorMessage("toString")).toBeNull();
+    expect(loginErrorMessage(undefined)).toBeNull();
+  });
   it("only allows demo mode (no sign-in) in a local dev server", async () => {
     vi.stubEnv("DATABASE_URL", "");
     vi.stubEnv("DEMO_MODE", "1");
