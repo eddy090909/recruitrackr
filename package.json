@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "demo": "tsx scripts/demo.ts",
     "dev:demo": "DEMO_MODE=1 PGLITE_DIR=data/demo-pglite next dev"
   },
