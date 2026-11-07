@@ -266,7 +266,9 @@ export async function classify(email: RawEmail): Promise<Classification & { sour
     try {
       return { ...(await classifyWithLLM(email)), source: "llm" };
     } catch (e) {
-      console.error(`[classify] LLM failed for ${email.gmailId}, using rules:`, e);
+      // Log the error type only: parse errors can quote model output, which is drawn from the email.
+      const why = e instanceof Anthropic.APIError ? `API ${e.status ?? "error"}` : e instanceof Error ? e.name : "unknown error";
+      console.error(`[classify] LLM failed for ${email.gmailId} (${why}), using rules`);
     }
   }
   return { ...classifyHeuristic(email), source: "rules" };
