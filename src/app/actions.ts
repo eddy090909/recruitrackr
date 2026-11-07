@@ -9,7 +9,7 @@ import { SESSION_COOKIE } from "@/lib/secure";
 import { runSync, type SyncSummary } from "@/lib/sync";
 import { ingestEmail, STATUSES, type Status } from "@/lib/ingest";
 import { CATEGORIES, type Category, type Classification } from "@/lib/classify";
-import { companyKey, roleKey } from "@/lib/normalize";
+import { companyKey, httpUrl, roleKey } from "@/lib/normalize";
 
 // Every action checks the session first: server actions are reachable by direct POST.
 
@@ -53,7 +53,7 @@ export async function addApplication(form: FormData) {
     const row = await t.one<{ id: number }>(
       `INSERT INTO applications(company, company_key, role, role_key, status, applied_at, last_update_at, job_url)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [company, companyKey(company), role, roleKey(role) || null, status, status === "saved" ? null : now, now, str(form, "job_url")],
+      [company, companyKey(company), role, roleKey(role) || null, status, status === "saved" ? null : now, now, httpUrl(str(form, "job_url"))],
     );
     await t.query("INSERT INTO status_events(application_id, status, occurred_at) VALUES ($1, $2, $3)", [row!.id, status, now]);
   });
@@ -80,7 +80,7 @@ export async function updateApplication(form: FormData) {
        company = COALESCE($1, company), company_key = COALESCE($2, company_key),
        role = $3, role_key = $4, job_url = $5, notes = $6, updated_at = now()
      WHERE id = $7`,
-    [company, company ? companyKey(company) : null, role, roleKey(role) || null, str(form, "job_url"), str(form, "notes"), id],
+    [company, company ? companyKey(company) : null, role, roleKey(role) || null, httpUrl(str(form, "job_url")), str(form, "notes"), id],
   );
   const status = str(form, "status") as Status | null;
   if (status) await setStatus(id, status);
@@ -140,7 +140,7 @@ export async function addActionItem(form: FormData) {
   const db = await getDb();
   const row = await db.one<{ id: number }>(
     "INSERT INTO action_items(application_id, type, description, link, due_at, created_at) VALUES ($1, 'other', $2, $3, $4, now()) RETURNING id",
-    [appId, description, str(form, "link"), due],
+    [appId, description, httpUrl(str(form, "link")), due],
   );
   if (due && row) {
     const app = await db.one<{ company: string }>("SELECT company FROM applications WHERE id = $1", [appId]);

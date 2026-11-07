@@ -3,7 +3,7 @@ import { createDb, getDb, setDb } from "@/lib/db";
 import { decrypt, encrypt, createSessionToken, readSessionToken } from "@/lib/secure";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
 import { ingestEmail, nextStatus } from "@/lib/ingest";
-import { companyKey, rolesMatch, rootDomain } from "@/lib/normalize";
+import { companyKey, httpUrl, rolesMatch, rootDomain } from "@/lib/normalize";
 import { buildQueries, htmlToText } from "@/lib/gmail";
 import { demoEmails } from "../scripts/demo-emails";
 
@@ -65,6 +65,13 @@ describe("normalization", () => {
     expect(rolesMatch("Software Engineering Intern, BS, Summer 2027", "Software Engineering Intern")).toBe(true);
     expect(rolesMatch("Data Science Intern", "Software Engineering Intern")).toBe(false);
   });
+  it("keeps only http(s) links", async () => {
+    expect(httpUrl("https://acme.com/form")).toBe("https://acme.com/form");
+    expect(httpUrl("jobs.acme.com/123")).toBe("https://jobs.acme.com/123");
+    expect(httpUrl("javascript:alert(1)")).toBeNull();
+    expect(httpUrl("data:text/html,hi")).toBeNull();
+    expect(httpUrl("")).toBeNull();
+  });
 });
 
 describe("ingestEmail", () => {
@@ -99,6 +106,12 @@ describe("ingestEmail", () => {
     await ingestEmail(mail("3"), { ...base, category: "action_required", actionItems: [action] });
     expect(await q("SELECT COUNT(*)::int n FROM action_items")).toEqual([{ n: 1 }]);
     expect(await q("SELECT COUNT(*)::int n FROM tasks")).toEqual([{ n: 1 }]);
+  });
+  it("drops non-web action links from emails", async () => {
+    await ingestEmail(mail("1"), base);
+    const action = { type: "form" as const, description: "Click here", link: "javascript:alert(document.cookie)", dueAt: null };
+    await ingestEmail(mail("2"), { ...base, category: "action_required", actionItems: [action] });
+    expect(await q("SELECT link FROM action_items")).toEqual([{ link: null }]);
   });
 
   it("sends low-confidence emails to review without touching applications", async () => {

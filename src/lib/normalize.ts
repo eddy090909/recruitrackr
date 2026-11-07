@@ -96,6 +96,18 @@ export function isPlatformDomain(domain: string): boolean {
   return PLATFORM_DOMAINS.some((p) => d === p || d.endsWith("." + p));
 }
 
+/** Keep only http(s) links. Links come from email text, so anything else (javascript:, data:) is dropped. */
+export function httpUrl(v: string | null | undefined): string | null {
+  const t = v?.trim();
+  if (!t) return null;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(t) ? t : `https://${t}`);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function senderName(sender: string | null | undefined): string {
   if (!sender) return "";
   const m = sender.match(/^\s*"?([^"<]+?)"?\s*</);

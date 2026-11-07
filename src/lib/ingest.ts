@@ -1,6 +1,6 @@
 import { getDb, type Db } from "./db";
 import type { Category, Classification, RawEmail } from "./classify";
-import { companyKey, emailDomain, isPlatformDomain, roleKey, rolesMatch, rootDomain } from "./normalize";
+import { companyKey, emailDomain, httpUrl, isPlatformDomain, roleKey, rolesMatch, rootDomain } from "./normalize";
 
 export const STATUSES = ["saved", "applied", "oa", "interview", "offer", "rejected"] as const;
 export type Status = (typeof STATUSES)[number];
@@ -189,7 +189,8 @@ export async function ingestEmail(email: RawEmail, c: Classification, opts: { fo
     );
 
     // Action items (deduplicated by link, then by description).
-    for (const item of c.actionItems) {
+    for (const raw of c.actionItems) {
+      const item = { ...raw, link: httpUrl(raw.link) };
       const dup = item.link
         ? await db.one("SELECT id FROM action_items WHERE application_id = $1 AND link = $2", [app.id, item.link])
         : await db.one("SELECT id FROM action_items WHERE application_id = $1 AND lower(description) = lower($2)", [app.id, item.description]);
