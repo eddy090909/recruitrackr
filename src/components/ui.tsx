@@ -9,28 +9,31 @@ export const STATUS_LABEL: Record<Status, string> = {
   rejected: "Rejected",
 };
 
-const STATUS_STYLE: Record<Status, string> = {
-  saved: "bg-stone-100 text-stone-700",
-  applied: "bg-sky-50 text-sky-800 ring-sky-200",
-  oa: "bg-violet-50 text-violet-800 ring-violet-200",
-  interview: "bg-amber-50 text-amber-800 ring-amber-200",
-  offer: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  rejected: "bg-stone-100 text-stone-500 ring-stone-200",
+/** Monochrome status pills: black = in progress, green = offer, outline = closed. */
+export const STATUS_STYLE: Record<Status, string> = {
+  saved: "bg-neutral-100 text-neutral-500",
+  applied: "bg-neutral-100 text-neutral-700",
+  oa: "bg-black text-white",
+  interview: "bg-black text-white",
+  offer: "bg-emerald-600 text-white",
+  rejected: "bg-white text-neutral-400 ring-1 ring-inset ring-neutral-200",
 };
 
 export function StatusBadge({ status }: { status: Status }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_STYLE[status]}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${STATUS_STYLE[status]}`}>
       {STATUS_LABEL[status]}
     </span>
   );
 }
 
+/** Red = something is waiting on you. */
 export function ActionBadge({ count }: { count: number }) {
   if (!count) return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-inset ring-red-200">
-      ⚠ Action needed{count > 1 ? ` (${count})` : ""}
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+      Action needed{count > 1 ? ` · ${count}` : ""}
     </span>
   );
 }
@@ -58,9 +61,8 @@ export function relDays(iso: string | null | undefined) {
 }
 
 export function dueTone(iso: string | null | undefined) {
-  if (!iso) return "text-stone-500";
+  if (!iso) return "text-neutral-400";
   const days = (Date.parse(iso) - Date.now()) / 86_400_000;
-  if (days < 0) return "text-red-700 font-semibold";
-  if (days < 2) return "text-amber-700 font-semibold";
-  return "text-stone-700";
+  if (days < 2) return "text-red-600 font-semibold";
+  return "text-neutral-600";
 }

@@ -8,7 +8,7 @@ export function SyncButton() {
   return (
     <form action={action} className="flex items-center gap-3">
       {state && (
-        <span className={`max-w-md truncate text-xs ${state.ok ? "text-stone-600" : "text-red-700"}`} title={state.message}>
+        <span className={`max-w-md truncate text-xs ${state.ok ? "text-neutral-600" : "text-red-700"}`} title={state.message}>
           {state.message}
         </span>
       )}

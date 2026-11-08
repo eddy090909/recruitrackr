@@ -132,6 +132,8 @@ export async function listDueSoon(days = 7) {
   return (await db()).query<TaskRow>(
     `SELECT t.*, a.company FROM tasks t LEFT JOIN applications a ON a.id = t.application_id
      WHERE NOT t.done AND t.due_at IS NOT NULL AND t.due_at <= now() + make_interval(days => $1)
+       -- Deadlines of open action items already appear in the Action needed panel.
+       AND (t.dedupe_key IS NULL OR t.dedupe_key NOT LIKE 'action:%')
      ORDER BY t.due_at`,
     [days],
   );
