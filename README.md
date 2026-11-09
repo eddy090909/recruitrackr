@@ -47,7 +47,7 @@ flowchart LR
   - Gmail access is read-only, and only subject, sender, date and a snippet are stored.
 - **One codebase, two databases** (`src/lib/db.ts`): real Postgres when `DATABASE_URL` is set, embedded Postgres (PGlite) otherwise, so local dev and tests need zero setup.
 
-## Deploy it (free: Vercel + Neon, about 20 minutes)
+## Deploy it (free: Vercel + Neon)
 
 ### 1. Database
 Create a free Postgres database at <https://neon.tech> and copy the **pooled** connection string. Tables are created automatically on first run.
@@ -92,7 +92,7 @@ npm run dev:demo   # opens the app on that data (no sign-in, sync disabled)
 
 ## Limits
 - It only sees what reaches your inbox. Some companies post updates only in their candidate portal (Workday especially), so check the portal for long-silent applications.
-- It's built for one user per deployment.
+
 
 ## Roadmap
 - [ ] Kanban view
