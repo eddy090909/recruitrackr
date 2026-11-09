@@ -21,8 +21,8 @@ async function HeaderStatus() {
       <span className="chip">Demo · sample data</span>
     );
   return (
-    <div className="flex items-center gap-4">
-      <Link href="/review" className="text-sm font-medium text-neutral-600 hover:text-black">
+    <div className="flex min-w-0 items-center gap-4">
+      <Link href="/review" className="shrink-0 whitespace-nowrap text-sm font-medium text-neutral-600 hover:text-black">
         Review
         {c.reviewCount > 0 && (
           <span className="ml-1.5 rounded-full bg-black px-1.5 py-0.5 text-[10px] font-semibold text-white">{c.reviewCount}</span>
@@ -30,19 +30,22 @@ async function HeaderStatus() {
       </Link>
       {c.connected ? (
         <>
-          <span className="hidden text-xs text-neutral-500 md:inline">
+          <span
+            className="hidden min-w-0 truncate text-xs text-neutral-500 md:inline"
+            title={`${c.email} · last sync ${c.lastSyncAt ? fmtDate(c.lastSyncAt, true) : "never"}${c.llm ? "" : " · rules classifier"}`}
+          >
             {c.email} · last sync {c.lastSyncAt ? fmtDate(c.lastSyncAt, true) : "never"}
             {!c.llm && " · rules classifier"}
           </span>
           <SyncButton />
         </>
       ) : (
-        <a href="/api/auth/google" className="btn-primary">
+        <a href="/api/auth/google" className="btn-primary shrink-0 whitespace-nowrap">
           Reconnect Gmail
         </a>
       )}
-      <form action={signOut}>
-        <button className="text-xs text-neutral-500 hover:text-black">Sign out</button>
+      <form action={signOut} className="shrink-0">
+        <button className="whitespace-nowrap text-xs text-neutral-500 hover:text-black">Sign out</button>
       </form>
     </div>
   );
@@ -53,8 +56,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full">
         <header className="sticky top-0 z-10 bg-white/90 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Link href="/" className="text-lg font-bold tracking-tight">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-8 px-6 py-4">
+            <Link href="/" className="shrink-0 text-lg font-bold tracking-tight">
               Recruitrackr
             </Link>
             <Suspense fallback={<span className="text-xs text-neutral-400">…</span>}>
