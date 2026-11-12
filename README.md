@@ -89,6 +89,7 @@ npm run dev:demo   # opens the app on that data (no sign-in, sync disabled)
 | `npm test` | Unit, pipeline and security tests (Vitest, embedded Postgres; set `TEST_DATABASE_URL` to use a real server) |
 | `npm run typecheck` / `npm run lint` | Type checking and linting |
 | `npm run demo` / `npm run dev:demo` | Sample data and preview mode |
+| `npm run reimport -- --yes` | Delete everything built from email so the next sync re-imports it with the current classifier (keeps the Gmail connection, hand-added applications, applications with notes or a job link, and your own tasks) |
 
 ## Limits
 - It only sees what reaches your inbox. Some companies post updates only in their candidate portal (Workday especially), so check the portal for long-silent applications.

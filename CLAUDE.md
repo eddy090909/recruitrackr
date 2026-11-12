@@ -7,6 +7,7 @@ Read `AGENTS.md` first: this is Next.js 16 with Cache Components enabled, and AP
 ## Commands
 - `npm run demo && npm run dev:demo`: preview with sample data, no login or Gmail (use this for UI work)
 - `npm run dev`: real app (needs `.env.local`, see `.env.example`)
+- `npm run reimport -- --yes`: clear email-built data so the next sync re-classifies everything (after classifier changes)
 - `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`: run all four before every commit
 
 ## Layout

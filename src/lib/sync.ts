@@ -1,6 +1,6 @@
 import { getSetting, setSetting } from "./db";
 import { classify, type RawEmail } from "./classify";
-import { ingestEmail } from "./ingest";
+import { closeStaleActions, ingestEmail } from "./ingest";
 import { fetchCandidateEmails } from "./gmail";
 
 export interface SyncSummary {
@@ -54,6 +54,7 @@ export function runSync(): Promise<SyncSummary> {
     const started = new Date().toISOString();
     const { emails, remaining } = await fetchCandidateEmails(since.toISOString(), limit);
     const summary: SyncSummary = { ...(await processEmails(emails)), remaining };
+    await closeStaleActions();
     // Only move the window forward once everything in it has been processed.
     if (remaining === 0) await setSetting("last_sync_at", started);
     await setSetting("last_sync_ran_at", started);

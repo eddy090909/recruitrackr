@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "demo": "tsx scripts/demo.ts",
-    "dev:demo": "DEMO_MODE=1 PGLITE_DIR=data/demo-pglite next dev"
+    "dev:demo": "DEMO_MODE=1 PGLITE_DIR=data/demo-pglite next dev",
+    "reimport": "tsx --env-file-if-exists=.env.local scripts/reimport.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

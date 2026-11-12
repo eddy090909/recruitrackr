@@ -4,7 +4,7 @@ import { decrypt, encrypt, createSessionToken, readSessionToken } from "@/lib/se
 import { isDemo } from "@/lib/secure-constants";
 import { loginErrorMessage } from "@/lib/login-errors";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
-import { ingestEmail, nextStatus } from "@/lib/ingest";
+import { closeStaleActions, ingestEmail, nextStatus } from "@/lib/ingest";
 import { companyKey, httpUrl, isPlatformDomain, rolesMatch, rootDomain } from "@/lib/normalize";
 import { buildQueries, htmlToText } from "@/lib/gmail";
 import { demoEmails } from "../scripts/demo-emails";
@@ -21,6 +21,7 @@ const mail = (id: string, over: Partial<RawEmail> = {}): RawEmail => ({
 });
 const app = async () => (await getDb()).query<{ id: number; status: string; role: string }>("SELECT * FROM applications ORDER BY id");
 const q = async (sql: string) => (await getDb()).query(sql);
+const daysFromNow = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
 
 // Runs on embedded Postgres (PGlite) by default; set TEST_DATABASE_URL to run against a real Postgres server.
 let shared: Awaited<ReturnType<typeof createDb>> | undefined;
@@ -108,9 +109,9 @@ describe("ingestEmail", () => {
 
   it("deduplicates action items and creates a task when there is a due date", async () => {
     await ingestEmail(mail("1"), base);
-    const action = { type: "form" as const, description: "Fill the form", link: "https://acme.com/form", dueAt: "2026-10-12T00:00:00.000Z" };
-    await ingestEmail(mail("2"), { ...base, category: "action_required", actionItems: [action] });
-    await ingestEmail(mail("3"), { ...base, category: "action_required", actionItems: [action] });
+    const action = { type: "form" as const, description: "Fill the form", link: "https://acme.com/form", dueAt: daysFromNow(5) };
+    await ingestEmail(mail("2", { date: daysFromNow(-1) }), { ...base, category: "action_required", actionItems: [action] });
+    await ingestEmail(mail("3", { date: daysFromNow(-1) }), { ...base, category: "action_required", actionItems: [action] });
     expect(await q("SELECT COUNT(*)::int n FROM action_items")).toEqual([{ n: 1 }]);
     expect(await q("SELECT COUNT(*)::int n FROM tasks")).toEqual([{ n: 1 }]);
   });
@@ -130,6 +131,40 @@ describe("ingestEmail", () => {
   it("skips emails it has already processed", async () => {
     await ingestEmail(mail("1"), base);
     expect((await ingestEmail(mail("1"), base)).skipped).toBe(true);
+  });
+});
+
+describe("stale action items", () => {
+  const item = (over: Partial<Classification["actionItems"][number]> = {}) => ({ type: "assessment" as const, description: "Take the OA", link: null, dueAt: daysFromNow(5), ...over });
+  const open = async () => (await q("SELECT description FROM action_items WHERE NOT done ORDER BY id")).map((r) => (r as { description: string }).description);
+
+  it("stores requests from old emails as already done, without a task", async () => {
+    await ingestEmail(mail("1"), base);
+    await ingestEmail(mail("2", { date: daysFromNow(-60) }), { ...base, category: "oa", actionItems: [item({ dueAt: daysFromNow(-50) })] });
+    await ingestEmail(mail("3", { date: daysFromNow(-60) }), { ...base, category: "action_required", actionItems: [item({ type: "form", description: "Old form", dueAt: null })] });
+    expect(await open()).toEqual([]);
+    expect(await q("SELECT COUNT(*)::int n FROM tasks")).toEqual([{ n: 0 }]);
+  });
+
+  it("closes the assessment once an interview arrives, and everything once rejected", async () => {
+    await ingestEmail(mail("1", { date: daysFromNow(-5) }), base);
+    await ingestEmail(mail("2", { date: daysFromNow(-4) }), { ...base, category: "oa", actionItems: [item()] });
+    await ingestEmail(mail("3", { date: daysFromNow(-3) }), { ...base, category: "action_required", actionItems: [item({ type: "form", description: "Upload transcript" })] });
+    await ingestEmail(mail("4", { date: daysFromNow(-2) }), { ...base, category: "interview", actionItems: [item({ type: "schedule", description: "Pick a time" })] });
+    expect(await open()).toEqual(["Upload transcript", "Pick a time"]);
+    expect(await q("SELECT done FROM tasks WHERE title LIKE '%Take the OA'")).toEqual([{ done: true }]);
+    await ingestEmail(mail("5", { date: daysFromNow(-1) }), { ...base, category: "rejection" });
+    expect(await open()).toEqual([]);
+  });
+
+  it("sweeps items that went stale after they were stored, but leaves hand-added ones", async () => {
+    await ingestEmail(mail("1", { date: daysFromNow(-2) }), { ...base, actionItems: [item()] });
+    const db = await getDb();
+    await db.query("UPDATE action_items SET due_at = $1", [daysFromNow(-10)]);
+    await db.query("INSERT INTO action_items(application_id, type, description, due_at, created_at) VALUES (1, 'other', 'Mine', $1, $1)", [daysFromNow(-10)]);
+    expect(await closeStaleActions()).toBe(1);
+    expect(await open()).toEqual(["Mine"]);
+    expect(await q("SELECT done FROM tasks")).toEqual([{ done: true }]);
   });
 });
 
