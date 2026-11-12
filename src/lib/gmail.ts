@@ -145,8 +145,6 @@ export function buildQueries(afterEpochSec: number, knownDomains: string[]): str
   return queries;
 }
 
-/* ---------------------------- fetching ----------------------------- */
-
 function decode(data?: string | null) {
   return data ? Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") : "";
 }
@@ -185,34 +183,83 @@ function extractBody(payload?: gmail_v1.Schema$MessagePart): string {
   return plain || htmlToText(html);
 }
 
-export async function fetchCandidateEmails(sinceIso: string, limit = Infinity): Promise<{ emails: RawEmail[]; remaining: number }> {
+/* ------------------------- rate limits ---------------------------- */
+
+export class GmailQuotaError extends Error {
+  constructor() {
+    super("Gmail is limiting requests right now. Wait a minute and sync again; progress is saved.");
+    this.name = "GmailQuotaError";
+  }
+}
+
+/** Gmail answers 429, or 403 with a rate-limit reason, when the per-minute quota is used up. */
+export function isQuotaError(e: unknown): boolean {
+  const err = e as { status?: number; code?: number | string; message?: string; errors?: { reason?: string }[] };
+  const status = Number(err?.status ?? err?.code);
+  if (status === 429) return true;
+  const reasons = (err?.errors ?? []).map((x) => x.reason ?? "");
+  return status === 403 && (reasons.some((r) => /rateLimitExceeded|quotaExceeded/i.test(r)) || /quota|rate limit/i.test(err?.message ?? ""));
+}
+
+function retryAfterMs(e: unknown): number | null {
+  const h = (e as { response?: { headers?: Record<string, string> | Headers } })?.response?.headers;
+  const v = h ? (typeof (h as Headers).get === "function" ? (h as Headers).get("retry-after") : (h as Record<string, string>)["retry-after"]) : null;
+  const n = Number(v);
+  return v && Number.isFinite(n) ? n * 1000 : null;
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Retry a Gmail call when it hits the rate limit: honor Retry-After, else back off 2s, 4s, 8s, 16s, 32s. */
+export async function withRetry<T>(fn: () => Promise<T>, opts: { attempts?: number; sleep?: (ms: number) => Promise<void> } = {}): Promise<T> {
+  const attempts = opts.attempts ?? 5;
+  const sleep = opts.sleep ?? wait;
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isQuotaError(e)) throw e;
+      if (i + 1 >= attempts) throw new GmailQuotaError();
+      await sleep(Math.min(retryAfterMs(e) ?? 2000 * 2 ** i, 60_000));
+    }
+  }
+}
+
+/* ---------------------------- fetching ----------------------------- */
+
+/**
+ * IDs of candidate recruiting emails since `sinceIso` that haven't been processed yet, oldest first.
+ * Searching is the expensive part of a sync, so callers keep this list and work through it over several runs.
+ */
+export async function listCandidateIds(sinceIso: string): Promise<string[]> {
   const gmail = google.gmail({ version: "v1", auth: await oauthClient() });
   const db = await getDb();
   const known = (await db.query<{ domain: string }>("SELECT DISTINCT domain FROM app_domains")).map((r) => r.domain);
   const queries = buildQueries(Math.floor(Date.parse(sinceIso) / 1000), known);
 
-  const ids = new Map<string, string | null>();
+  const ids = new Set<string>();
   for (const q of queries) {
     let pageToken: string | undefined;
     do {
-      const res = await gmail.users.messages.list({ userId: "me", q, maxResults: 500, pageToken });
-      for (const m of res.data.messages ?? []) if (m.id) ids.set(m.id, m.threadId ?? null);
+      const res = await withRetry(() => gmail.users.messages.list({ userId: "me", q, maxResults: 500, pageToken }));
+      for (const m of res.data.messages ?? []) if (m.id) ids.add(m.id);
       pageToken = res.data.nextPageToken ?? undefined;
     } while (pageToken);
   }
 
-  // Skip messages we've already processed.
   const seen = new Set((await db.query<{ gmail_id: string }>("SELECT gmail_id FROM emails")).map((r) => r.gmail_id));
-  const unseen = [...ids.keys()].filter((id) => !seen.has(id));
-  // Gmail lists newest first; process the oldest first so timelines build in order across batches.
-  unseen.reverse();
-  const todo = unseen.slice(0, limit);
+  // Gmail lists newest first; process the oldest first so timelines build in order across runs.
+  return [...ids].filter((id) => !seen.has(id)).reverse();
+}
 
+/** Download messages by ID (a few at a time, retrying on rate limits). */
+export async function fetchEmails(ids: string[]): Promise<RawEmail[]> {
+  const gmail = google.gmail({ version: "v1", auth: await oauthClient() });
   const out: RawEmail[] = [];
-  const BATCH = 10;
-  for (let i = 0; i < todo.length; i += BATCH) {
+  const BATCH = 5;
+  for (let i = 0; i < ids.length; i += BATCH) {
     const chunk = await Promise.all(
-      todo.slice(i, i + BATCH).map((id) => gmail.users.messages.get({ userId: "me", id, format: "full" })),
+      ids.slice(i, i + BATCH).map((id) => withRetry(() => gmail.users.messages.get({ userId: "me", id, format: "full" }))),
     );
     for (const { data } of chunk) {
       const h = (name: string) => data.payload?.headers?.find((x) => x.name?.toLowerCase() === name)?.value ?? "";
@@ -228,5 +275,5 @@ export async function fetchCandidateEmails(sinceIso: string, limit = Infinity): 
       });
     }
   }
-  return { emails: out.sort((a, b) => a.date.localeCompare(b.date)), remaining: unseen.length - todo.length };
+  return out.sort((a, b) => a.date.localeCompare(b.date));
 }

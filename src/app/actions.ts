@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { isDemo, requireUser } from "@/lib/auth";
 import { SESSION_COOKIE } from "@/lib/secure";
 import { runSync, type SyncSummary } from "@/lib/sync";
+import { GmailQuotaError } from "@/lib/gmail";
 import { ingestEmail, STATUSES, type Status } from "@/lib/ingest";
 import { CATEGORIES, type Category, type Classification } from "@/lib/classify";
 import { companyKey, httpUrl, roleKey } from "@/lib/normalize";
@@ -31,7 +32,10 @@ export async function syncNow(_prev: unknown): Promise<{ ok: boolean; message: s
     return { ok: true, summary: s, message: `Fetched ${s.fetched} new emails · ${s.linked} linked · ${s.review} to review · ${s.ignored} ignored${more}` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, message: /invalid_grant|not connected/i.test(msg) ? "Gmail access expired. Sign out and sign in again." : msg };
+    console.error(`[sync] failed: ${e instanceof Error ? e.name : "unknown error"}`);
+    if (/invalid_grant|not connected/i.test(msg)) return { ok: false, message: "Gmail access expired. Sign out and sign in again." };
+    if (e instanceof GmailQuotaError) return { ok: false, message: e.message };
+    return { ok: false, message: msg };
   }
 }
 

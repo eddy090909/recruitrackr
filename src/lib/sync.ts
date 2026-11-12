@@ -1,7 +1,7 @@
 import { getSetting, setSetting } from "./db";
 import { classify, type RawEmail } from "./classify";
 import { closeStaleActions, ingestEmail } from "./ingest";
-import { fetchCandidateEmails } from "./gmail";
+import { fetchEmails, listCandidateIds } from "./gmail";
 
 export interface SyncSummary {
   fetched: number;
@@ -40,23 +40,35 @@ export async function processEmails(emails: RawEmail[], concurrency = 4): Promis
 }
 
 /**
- * Pull new recruiting emails and apply them. Processes at most MAX_EMAILS_PER_SYNC per run
- * so it fits in a serverless time limit; the rest are picked up by the next run.
+ * Pull new recruiting emails and apply them. Processes at most MAX_EMAILS_PER_SYNC per run so it fits
+ * in a serverless time limit. Gmail is searched once per window; the matching message IDs are saved
+ * as a backlog that later runs work through without searching again (searches use most of the quota).
  */
 export function runSync(): Promise<SyncSummary> {
   if (running) return running;
   running = (async () => {
     const days = Number(process.env.SYNC_DAYS || 120);
     const limit = Number(process.env.MAX_EMAILS_PER_SYNC || 150);
-    const last = await getSetting("last_sync_at");
-    // Overlap by a day; already-processed messages are skipped by Gmail ID.
-    const since = last ? new Date(Date.parse(last) - 86_400_000) : new Date(Date.now() - days * 86_400_000);
     const started = new Date().toISOString();
-    const { emails, remaining } = await fetchCandidateEmails(since.toISOString(), limit);
-    const summary: SyncSummary = { ...(await processEmails(emails)), remaining };
+    // Housekeeping that needs no Gmail access, so it happens even if Gmail is unavailable.
     await closeStaleActions();
-    // Only move the window forward once everything in it has been processed.
-    if (remaining === 0) await setSetting("last_sync_at", started);
+
+    let backlog: string[] = JSON.parse((await getSetting("sync_backlog")) || "[]");
+    if (!backlog.length) {
+      const last = await getSetting("last_sync_at");
+      // Overlap by a day; already-processed messages are skipped by Gmail ID.
+      const since = last ? new Date(Date.parse(last) - 86_400_000) : new Date(Date.now() - days * 86_400_000);
+      backlog = await listCandidateIds(since.toISOString());
+      await setSetting("sync_backlog", JSON.stringify(backlog));
+      await setSetting("sync_backlog_listed_at", started);
+    }
+
+    const batch = backlog.slice(0, limit);
+    const summary: SyncSummary = { ...(await processEmails(await fetchEmails(batch))), remaining: backlog.length - batch.length };
+    await setSetting("sync_backlog", JSON.stringify(backlog.slice(batch.length)));
+    // Move the search window forward only once the whole backlog is done.
+    if (summary.remaining === 0) await setSetting("last_sync_at", (await getSetting("sync_backlog_listed_at")) || started);
+    await closeStaleActions();
     await setSetting("last_sync_ran_at", started);
     await setSetting("last_sync_summary", JSON.stringify(summary));
     return summary;

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { runSync } from "@/lib/sync";
+import { GmailQuotaError } from "@/lib/gmail";
 
 export const maxDuration = 300;
 
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest) {
   try {
     return NextResponse.json({ ok: true, ...(await runSync()) });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    // A rate limit is temporary and progress is saved; the next scheduled run continues.
+    const status = e instanceof GmailQuotaError ? 429 : 500;
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status });
   }
 }

@@ -6,7 +6,7 @@ import { loginErrorMessage } from "@/lib/login-errors";
 import { classifyHeuristic, parseClassification, type Classification, type RawEmail } from "@/lib/classify";
 import { closeStaleActions, ingestEmail, nextStatus } from "@/lib/ingest";
 import { companyKey, httpUrl, isPlatformDomain, rolesMatch, rootDomain } from "@/lib/normalize";
-import { buildQueries, htmlToText } from "@/lib/gmail";
+import { buildQueries, GmailQuotaError, htmlToText, isQuotaError, withRetry } from "@/lib/gmail";
 import { demoEmails } from "../scripts/demo-emails";
 
 const base: Classification = { category: "confirmation", company: "Acme", role: "Software Engineer Intern", actionItems: [], deadline: null, interviewAt: null, confidence: 0.95 };
@@ -216,6 +216,24 @@ describe("gmail helpers", () => {
     expect(q.some((x) => x.includes('"thank you for applying"'))).toBe(true);
     expect(q.at(-1)).toContain("from:(netflix.com)");
     expect(q.every((x) => x.includes("after:1700000000"))).toBe(true);
+  });
+});
+
+describe("gmail rate limits", () => {
+  const quota = Object.assign(new Error("Quota exceeded for quota metric"), { status: 403, errors: [{ reason: "rateLimitExceeded" }] });
+  it("recognizes rate-limit errors only", async () => {
+    expect(isQuotaError(quota)).toBe(true);
+    expect(isQuotaError({ status: 429 })).toBe(true);
+    expect(isQuotaError(Object.assign(new Error("Forbidden"), { status: 403, errors: [{ reason: "insufficientPermissions" }] }))).toBe(false);
+  });
+  it("retries with backoff, then gives a short message", async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => void waits.push(ms);
+    let calls = 0;
+    expect(await withRetry(async () => (++calls < 3 ? Promise.reject(quota) : "ok"), { sleep })).toBe("ok");
+    expect(waits).toEqual([2000, 4000]);
+    await expect(withRetry(() => Promise.reject(quota), { sleep, attempts: 2 })).rejects.toBeInstanceOf(GmailQuotaError);
+    await expect(withRetry(() => Promise.reject(new Error("boom")), { sleep })).rejects.toThrow("boom");
   });
 });
 

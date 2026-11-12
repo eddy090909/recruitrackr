@@ -28,7 +28,7 @@ async function main() {
     await t.query("DELETE FROM action_items WHERE email_id IS NOT NULL");
     await t.query("DELETE FROM tasks WHERE source = 'auto'");
     const emails = await t.query("DELETE FROM emails RETURNING id");
-    await t.query("DELETE FROM settings WHERE key IN ('last_sync_at', 'last_sync_summary')");
+    await t.query("DELETE FROM settings WHERE key IN ('last_sync_at', 'last_sync_summary', 'sync_backlog', 'sync_backlog_listed_at')");
     return { apps: apps.length, emails: emails.length };
   });
   console.log(`Removed ${counts.apps} applications and ${counts.emails} emails. Press "Sync now" in the app to re-import.`);
