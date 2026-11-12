@@ -30,6 +30,8 @@ export interface ActionItemRow {
   due_at: string | null;
   done: boolean;
   created_at: string;
+  /** Has a deadline within the next week (or already past). Set by listOpenActions. */
+  due_this_week?: boolean;
 }
 
 export interface TaskRow {
@@ -121,10 +123,12 @@ export async function getStats() {
   return { total, by, responseRate: total ? responded / total : 0, noResponse };
 }
 
-export async function listOpenActions() {
+export async function listOpenActions(weekDays = 7) {
   return (await db()).query<ActionItemRow>(
-    `SELECT x.*, a.company, a.role FROM action_items x JOIN applications a ON a.id = x.application_id
+    `SELECT x.*, a.company, a.role, COALESCE(x.due_at <= now() + make_interval(days => $1), false) AS due_this_week
+     FROM action_items x JOIN applications a ON a.id = x.application_id
      WHERE NOT x.done ORDER BY x.due_at ASC NULLS LAST, x.created_at DESC`,
+    [weekDays],
   );
 }
 

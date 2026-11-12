@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { addApplication, toggleAction, toggleTask } from "./actions";
-import { getStats, isNoResponse, listApplications, listDueSoon, listOpenActions, daysSince } from "@/lib/queries";
+import { getStats, isNoResponse, listApplications, listDueSoon, listOpenActions, daysSince, type ActionItemRow, type TaskRow } from "@/lib/queries";
 import { STATUSES } from "@/lib/ingest";
 import { ActionBadge, STATUS_LABEL, dueTone, fmtDate, relDays } from "@/components/ui";
 import { StatusSelect } from "@/components/StatusSelect";
@@ -52,91 +52,172 @@ async function Stats() {
   );
 }
 
-async function ActionNeeded() {
-  const items = await listOpenActions();
+const WEEK_DAYS = 7;
+const DAY = 86_400_000;
+
+/** "Overdue", "Today", "Tomorrow", then the weekday ("Thursday, Nov 13"). */
+function dayGroup(iso: string) {
+  const due = new Date(iso);
+  if (due.getTime() < Date.now()) return "Overdue";
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const diff = Math.floor((due.getTime() - start.getTime()) / DAY);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  return due.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+}
+
+function dueTime(iso: string) {
+  const d = new Date(iso);
+  return d.getHours() === 23 && d.getMinutes() === 59 ? "End of day" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+type WeekItem = { kind: "action"; due: string; a: ActionItemRow } | { kind: "task"; due: string; t: TaskRow };
+
+function ActionCard({ a }: { a: ActionItemRow }) {
   return (
-    <section className="card px-5 py-5">
-      <div className="mb-4 flex items-center justify-between px-1">
-        <h2 className="label-urgent flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-red-600" />
-          Action needed
-        </h2>
-        {items.length > 0 && (
-          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white tabular-nums">{items.length}</span>
-        )}
+    <li className="card-inner border-l-4 border-red-600 px-4 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Link href={`/applications/${a.application_id}`} className="text-base font-semibold hover:underline">
+            {a.company}
+          </Link>
+          <div className="text-xs text-neutral-500">{a.role ?? a.type}</div>
+        </div>
+        <div className={`shrink-0 text-right text-xs ${dueTone(a.due_at)}`}>
+          {a.due_at ? `${dueTime(a.due_at)} · ${relDays(a.due_at)}` : <span className="text-neutral-400">No deadline</span>}
+        </div>
       </div>
-      {items.length === 0 ? (
-        <p className="card-inner px-4 py-6 text-sm text-neutral-500">Nothing waiting on you.</p>
-      ) : (
-        <ul className="space-y-3">
-          {items.map((a) => (
-            <li key={a.id} className="card-inner border-l-4 border-red-600 px-4 py-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <Link href={`/applications/${a.application_id}`} className="text-base font-semibold hover:underline">
-                    {a.company}
-                  </Link>
-                  <div className="text-xs text-neutral-500">{a.role ?? a.type}</div>
-                </div>
-                <div className={`shrink-0 text-right text-xs ${dueTone(a.due_at)}`}>
-                  {a.due_at ? `Due ${fmtDate(a.due_at)} · ${relDays(a.due_at)}` : <span className="text-neutral-400">No deadline</span>}
-                </div>
-              </div>
-              <p className="mt-2 text-sm text-neutral-700">{a.description}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {a.link && (
-                  <a href={a.link} target="_blank" rel="noreferrer" className="btn-primary px-4 py-1.5 text-xs">
-                    {linkLabel(a.type)} ↗
-                  </a>
-                )}
-                <form action={toggleAction}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button className="chip py-1.5" aria-label={`Mark "${a.description}" done for ${a.company}`}>
-                    Mark done
-                  </button>
-                </form>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      <p className="mt-2 text-sm text-neutral-700">{a.description}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {a.link && (
+          <a href={a.link} target="_blank" rel="noreferrer" className="btn-primary px-4 py-1.5 text-xs">
+            {linkLabel(a.type)} ↗
+          </a>
+        )}
+        <form action={toggleAction}>
+          <input type="hidden" name="id" value={a.id} />
+          <button className="chip py-1.5" aria-label={`Mark "${a.description}" done for ${a.company}`}>
+            Mark done
+          </button>
+        </form>
+      </div>
+    </li>
   );
 }
 
-async function DueSoon() {
-  const tasks = await listDueSoon(7);
+function TaskCard({ t }: { t: TaskRow }) {
   return (
-    <section className="card px-5 py-5">
-      <div className="mb-4 flex items-center justify-between px-1">
-        <h2 className="label">Also due this week</h2>
-        <span className="text-xs text-neutral-500 tabular-nums">{tasks.length}</span>
+    <li className="card-inner flex items-center gap-3 px-4 py-3">
+      <form action={toggleTask}>
+        <input type="hidden" name="id" value={t.id} />
+        <button title="Mark done" aria-label={`Mark "${t.title}" done`} className="h-4 w-4 rounded-full ring-1 ring-neutral-300 hover:bg-neutral-100" />
+      </form>
+      <div className="min-w-0 flex-1 truncate text-sm">
+        {t.application_id ? (
+          <Link href={`/applications/${t.application_id}`} className="hover:underline">
+            {t.title}
+          </Link>
+        ) : (
+          t.title
+        )}
       </div>
-      {tasks.length === 0 ? (
-        <p className="card-inner px-4 py-6 text-sm text-neutral-500">No other deadlines this week.</p>
-      ) : (
-        <ul className="card-inner divide-y divide-neutral-100">
-          {tasks.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 px-4 py-3">
-              <form action={toggleTask}>
-                <input type="hidden" name="id" value={t.id} />
-                <button title="Mark done" aria-label={`Mark "${t.title}" done`} className="h-4 w-4 rounded-full ring-1 ring-neutral-300 hover:bg-neutral-100" />
-              </form>
-              <div className="min-w-0 flex-1 truncate text-sm">
-                {t.application_id ? (
-                  <Link href={`/applications/${t.application_id}`} className="hover:underline">
-                    {t.title}
-                  </Link>
-                ) : (
-                  t.title
-                )}
+      <div className={`shrink-0 text-xs ${dueTone(t.due_at)}`}>
+        {t.due_at && `${dueTime(t.due_at)} · ${relDays(t.due_at)}`}
+      </div>
+    </li>
+  );
+}
+
+/** Everything with a deadline in the next week (or already missed), then open actions without one. */
+async function ThisWeek() {
+  const [actions, tasks] = await Promise.all([listOpenActions(WEEK_DAYS), listDueSoon(WEEK_DAYS)]);
+  const week: WeekItem[] = [
+    ...actions.filter((a) => a.due_this_week).map((a) => ({ kind: "action" as const, due: a.due_at!, a })),
+    ...tasks.map((t) => ({ kind: "task" as const, due: t.due_at!, t })),
+  ].sort((x, y) => x.due.localeCompare(y.due));
+  const later = actions.filter((a) => !a.due_this_week);
+
+  const groups = new Map<string, WeekItem[]>();
+  for (const item of week) {
+    const g = dayGroup(item.due);
+    groups.set(g, [...(groups.get(g) ?? []), item]);
+  }
+
+  return (
+    <>
+      <section className="card mb-6 px-5 py-5">
+        <div className="mb-4 flex items-center justify-between px-1">
+          <h2 className={`${week.length ? "label-urgent" : "label"} flex items-center gap-2`}>
+            {week.length > 0 && <span className="h-2 w-2 rounded-full bg-red-600" />}
+            Due this week
+          </h2>
+          {week.length > 0 && <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white tabular-nums">{week.length}</span>}
+        </div>
+        {week.length === 0 ? (
+          <p className="card-inner px-4 py-6 text-sm text-neutral-500">Nothing due in the next 7 days.</p>
+        ) : (
+          <div className="space-y-5">
+            {[...groups].map(([label, items]) => (
+              <div key={label}>
+                <h3 className={`mb-2 px-1 text-xs font-semibold ${label === "Overdue" ? "text-red-600" : "text-neutral-500"}`}>
+                  {label} <span className="font-normal text-neutral-400">· {items.length}</span>
+                </h3>
+                <ul className="grid gap-3 md:grid-cols-2">
+                  {items.map((item) => (item.kind === "action" ? <ActionCard key={`a${item.a.id}`} a={item.a} /> : <TaskCard key={`t${item.t.id}`} t={item.t} />))}
+                </ul>
               </div>
-              <div className={`shrink-0 text-xs ${dueTone(t.due_at)}`}>{relDays(t.due_at)}</div>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        )}
+      </section>
+      {later.length > 0 && (
+        <section className="card mb-6 px-5 py-5">
+          <div className="mb-3 flex items-center justify-between px-1">
+            <h2 className="label">Other open actions</h2>
+            <span className="text-xs text-neutral-500 tabular-nums">{later.length}</span>
+          </div>
+          <ul className="card-inner divide-y divide-neutral-100">
+            {later.slice(0, 5).map((a) => (
+              <LaterRow key={a.id} a={a} />
+            ))}
+          </ul>
+          {later.length > 5 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer px-1 text-xs font-medium text-neutral-500 hover:text-black">Show {later.length - 5} more</summary>
+              <ul className="card-inner mt-2 divide-y divide-neutral-100">
+                {later.slice(5).map((a) => (
+                  <LaterRow key={a.id} a={a} />
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
       )}
-    </section>
+    </>
+  );
+}
+
+function LaterRow({ a }: { a: ActionItemRow }) {
+  return (
+    <li className="flex items-center gap-3 px-4 py-3 text-sm">
+      <form action={toggleAction}>
+        <input type="hidden" name="id" value={a.id} />
+        <button title="Mark done" aria-label={`Mark "${a.description}" done for ${a.company}`} className="h-4 w-4 rounded-full ring-1 ring-neutral-300 hover:bg-neutral-100" />
+      </form>
+      <Link href={`/applications/${a.application_id}`} className="shrink-0 font-semibold hover:underline">
+        {a.company}
+      </Link>
+      <span className="min-w-0 flex-1 truncate text-neutral-600" title={a.description}>
+        {a.description}
+      </span>
+      {a.link && (
+        <a href={a.link} target="_blank" rel="noreferrer" className="link-out shrink-0 text-xs">
+          {linkLabel(a.type)} ↗
+        </a>
+      )}
+      <span className="shrink-0 text-xs text-neutral-400">{a.due_at ? fmtDate(a.due_at) : "No deadline"}</span>
+    </li>
   );
 }
 
@@ -244,21 +325,12 @@ export default function Home({ searchParams }: PageProps<"/">) {
       <Suspense>
         <Banner searchParams={sp} />
       </Suspense>
+      <Suspense fallback={<Skeleton h="h-48 mb-6" />}>
+        <ThisWeek />
+      </Suspense>
       <Suspense fallback={<Skeleton h="h-24 mb-6" />}>
         <Stats />
       </Suspense>
-      <div className="mb-6 grid items-start gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <Suspense fallback={<Skeleton />}>
-            <ActionNeeded />
-          </Suspense>
-        </div>
-        <div className="lg:col-span-2">
-          <Suspense fallback={<Skeleton />}>
-            <DueSoon />
-          </Suspense>
-        </div>
-      </div>
       <Suspense fallback={<Skeleton h="h-96" />}>
         <ApplicationsTable searchParams={sp} />
       </Suspense>
