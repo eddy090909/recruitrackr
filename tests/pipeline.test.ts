@@ -133,6 +133,29 @@ describe("ingestEmail", () => {
   });
 });
 
+describe("rules classifier on real-world noise", () => {
+  it("does not take a person's name as the company", async () => {
+    const c = classifyHeuristic(mail("1", { sender: '"Kallenbach, Lindsay" <lk@example.edu>', subject: "Quick question", body: "Please complete the form below before Friday." }));
+    expect(c.company).toBeNull();
+    const r = classifyHeuristic(mail("2", { sender: "Jane Doe <jane@stripe.com>", body: "We'd like to invite you to a phone screen for the Software Engineer Intern role." }));
+    expect(r).toMatchObject({ category: "interview", company: "Stripe" });
+  });
+
+  it("does not take a program or event as the company", async () => {
+    const c = classifyHeuristic(mail("1", { sender: "Programs <info@example.org>", body: "Thank you for your interest in Summer Seminar. Please complete the registration form." }));
+    expect(c.company).not.toBe("Summer Seminar");
+  });
+
+  it("treats announcements and mailing lists as not recruiting, unless about your application", async () => {
+    const news = mail("1", { subject: "2027 Internship Opportunities Now Available", body: "Explore roles and get interview tips at our webinar. Register now!" });
+    expect(classifyHeuristic(news).category).toBe("not_recruiting");
+    const list = mail("2", { bulk: true, subject: "This week at Acme", body: "Meet with our team at our booth." });
+    expect(classifyHeuristic(list).category).toBe("not_recruiting");
+    const confirm = mail("3", { bulk: true, body: "Thank you for applying to Acme. We have received your application." });
+    expect(classifyHeuristic(confirm).category).toBe("confirmation");
+  });
+});
+
 describe("end-to-end with the rules classifier", () => {
   it("builds the expected pipeline from the demo inbox", async () => {
     for (const e of demoEmails()) await ingestEmail(e, classifyHeuristic(e));

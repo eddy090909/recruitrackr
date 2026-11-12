@@ -224,6 +224,7 @@ export async function fetchCandidateEmails(sinceIso: string, limit = Infinity): 
         date: new Date(Number(data.internalDate)).toISOString(),
         snippet: data.snippet ?? "",
         body: extractBody(data.payload ?? undefined),
+        bulk: Boolean(h("list-unsubscribe") || h("list-id")) || /^(bulk|list)$/i.test(h("precedence").trim()),
       });
     }
   }

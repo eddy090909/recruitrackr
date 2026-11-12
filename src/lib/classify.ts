@@ -24,6 +24,8 @@ export interface RawEmail {
   date: string; // ISO
   snippet?: string;
   body: string; // plain text, links preserved
+  /** Sent to a mailing list (List-Unsubscribe / List-Id / Precedence: bulk). Newsletters and alerts, mostly. */
+  bulk?: boolean;
 }
 
 const nullableString = z
@@ -86,12 +88,13 @@ Categories:
 - offer: an offer of employment/internship.
 - action_required: the candidate must do something that is NOT an OA or interview (fill a form, upload documents, confirm interest, complete a profile, answer questions) — e.g. "if you applied, you still need to complete this form before we can review your application".
 - update_other: recruiting-related but no status change and no action (e.g. "your application is still under review", event invites for applicants).
-- not_recruiting: job alerts, newsletters, "jobs you may like", marketing, networking platforms' digests, anything not about a specific application by this candidate.
+- not_recruiting: job alerts, newsletters, "jobs you may like", marketing, networking platforms' digests, anything not about a specific application by this candidate. This includes announcements that roles or programs are open ("2027 internship opportunities now available"), career-center or university mailings, event/webinar/info-session/career-fair invitations, and personal or class emails.
 
 Rules:
 - An email can have a status category AND actionItems (e.g. an OA invite with a link and a deadline → category "oa" plus an actionItem of type "assessment").
 - Any time the candidate must do something, add an actionItem with a short imperative description, the most relevant link (exact URL from the email), and dueAt if a date is stated.
-- company = the hiring company (not the ATS vendor like Greenhouse/Workday/HackerRank). role = job title if stated.
+- company = the hiring company (not the ATS vendor like Greenhouse/Workday/HackerRank). It is an organization, never a person's name (a sender like "Smith, Jane" is a person) and never a program or event name ("Summer Seminar"). If unsure, null. role = job title if stated.
+- "Mailing list: yes" means the email went to a list; treat it as not_recruiting unless it is clearly about this candidate's own application.
 - Dates as ISO 8601. Use the email's sent date to resolve relative dates. Unknown → null.
 - confidence = how sure you are about category and company (0-1).
 
@@ -102,7 +105,7 @@ export async function classifyWithLLM(email: RawEmail, client?: Anthropic): Prom
   const anthropic = client ?? new Anthropic();
   const model = process.env.CLASSIFIER_MODEL || "claude-haiku-5-5";
   const body = email.body.length > 6000 ? email.body.slice(0, 6000) + "\n[truncated]" : email.body;
-  const user = `Sent: ${email.date}\nFrom: ${email.sender}\nSubject: ${email.subject}\n\n${body}`;
+  const user = `Sent: ${email.date}\nFrom: ${email.sender}\nMailing list: ${email.bulk ? "yes" : "no"}\nSubject: ${email.subject}\n\n${body}`;
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -127,10 +130,18 @@ export async function classifyWithLLM(email: RawEmail, client?: Anthropic): Prom
 
 const RX = {
   notRecruiting: /(jobs you may like|job alert|new jobs for you|recommended jobs|unsubscribe from job alerts|weekly digest|is hiring\b.*\bapply now)/i,
+  // Announcements and mailings: only count when nothing points at the candidate's own application.
+  newsletter:
+    /(newsletter|webinar|info(rmation(al)?)? session|career fair|opportunities (are )?now (available|open)|applications? (are |is )?(now )?open\b|now accepting applications|upcoming (events|deadlines)|view (this email )?in (your )?browser|register (now|today|here)|rsvp)/i,
+  personal:
+    /(your (application|candidacy|interview|assessment|submission)|you (recently )?applied|thank(s| you) for (applying|your application)|received your application|invit\w* you to|you('ve| have) been (invited|selected)|we('d| would) like to (invite|offer|move forward)|offer letter)/i,
   offer: /(pleased to (extend|offer)|offer letter|we('d| would) like to offer|congratulations[^.]{0,80}offer)/i,
-  rejection: /(unfortunately|not (to )?(be )?mov(e|ing) forward|other candidates|decided to pursue|not selected|no longer under consideration|regret to inform|will not be proceeding)/i,
+  rejection:
+    /(unfortunately[^.]{0,120}(application|candidacy|position|role|forward|proceed|other candidates)|not (to )?(be )?mov(e|ing) forward|other candidates|decided to pursue|not selected|no longer under consideration|regret to inform|will not be proceeding)/i,
   oa: /(online assessment|coding (challenge|assessment)|hackerrank|codesignal|codility|hirevue|technical assessment|complete (the|an|your) assessment|\bOA\b)/i,
-  interview: /(interview|schedule (a|your) (call|time)|availability for|superday|phone screen|meet with our team)/i,
+  // "interview" alone also appears in tips, newsletters and event blurbs.
+  interview:
+    /(invit\w* you to (an? |your )?(\w+ )?interview|interview (invitation|request|confirmation|schedul)|schedul\w* (an? |your )?(interview|call|time)|availability for|superday|phone screen|next round|would like to (speak|meet|interview) with you|meet with our team)/i,
   action: /(please (fill|complete|submit|upload|confirm|provide)|still need to|action required|before we (can )?review|complete (this|the|your) (form|profile|questionnaire|application))/i,
   confirmation: /(thank(s| you) for (applying|your application|your interest)|received your application|application (has been )?(received|submitted)|we have received|successfully submitted)/i,
 };
@@ -162,23 +173,43 @@ function guessDate(text: string, sentIso: string): string | null {
   return d.toISOString();
 }
 
+/** Program, event and mailing names that phrase patterns pick up but that are not companies. */
+const NOT_A_COMPANY = /\b(seminar|program(me)?|conference|webinar|workshop|session|fair|event|summit|series|newsletter|opportunit(y|ies)|internships?|office|center|centre|students?|class|course|university|college|school)\b/i;
+const RECRUITING_WORD = /\b(recruiting|recruitment|careers?|staffing|talent( acquisition)?|university|campus|hiring|jobs|hr)\b/i;
+
+function looksLikeCompany(name: string): boolean {
+  return name.length >= 2 && !NOT_A_COMPANY.test(name);
+}
+
 function guessCompany(email: RawEmail): string | null {
   const text = `${email.subject}\n${email.body}`;
   const patterns = [
     /thank(?:s| you) for (?:applying|your interest|your application)(?: to| in| at| with)? ([A-Z][\w&.\- ]{1,40}?)(?:[!.,\n]| for | to )/,
     /your application (?:to|with|at) ([A-Z][\w&.\- ]{1,40}?)(?:[!.,\n]| for | has )/,
-    /(?:at|join) ([A-Z][\w&.\-]{1,30}(?: [A-Z][\w&.\-]+)?)(?:[!.,\n]| is | team)/,
+    /(?:recruiting|careers|talent|hiring) team (?:at|from) ([A-Z][\w&.\-]{1,30}(?: [A-Z][\w&.\-]+)?)(?:[!.,\n]| is )/,
   ];
   for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return m[1].trim();
+    const m = text.match(p)?.[1].replace(/^the /i, "").trim();
+    if (m && looksLikeCompany(m)) return m;
   }
-  const name = senderName(email.sender)
-    .replace(/\b(recruiting|careers|staffing|talent( acquisition)?|university|campus|hiring|team|jobs|no-?reply|via .*)\b/gi, "")
-    .replace(/[@|-].*$/, "")
-    .trim();
   const domain = emailDomain(email.sender);
-  if (name && !/^(greenhouse|workday|lever|hackerrank|codesignal|hirevue)/i.test(name)) return name;
+  const root = domain ? rootDomain(domain).split(".")[0] : "";
+  const raw = senderName(email.sender);
+  const name = raw
+    .replace(/\b(recruiting|recruitment|careers?|staffing|talent( acquisition)?|university|campus|hiring|team|jobs|no-?reply|via .*)\b/gi, "")
+    .replace(/[@|-].*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // A sender name is only a company when it says so ("Netflix Recruiting") or matches its own domain
+  // ("Stripe" <no-reply@stripe.com>). Otherwise it is usually a person ("Kallenbach, Lindsay").
+  const namesItself = RECRUITING_WORD.test(raw) || (root && name.toLowerCase().replace(/[^a-z0-9]/g, "").includes(root.toLowerCase()));
+  // Personal mailboxes and universities: the sender is a person or an office, not the hiring company.
+  const personalDomain = /(^|\.)(gmail|googlemail|outlook|hotmail|yahoo|icloud)\.com$|\.edu$/.test(domain);
+  const person = raw.includes(",") || (personalDomain && !RECRUITING_WORD.test(raw));
+  // On an ATS domain (Greenhouse, Lever…) the sender name is the company ("Jane Street" <no-reply@greenhouse.io>).
+  const atsSender = isPlatformDomain(domain) && !personalDomain;
+  if (name && !person && (namesItself || atsSender) && looksLikeCompany(name) && !/^(greenhouse|workday|lever|hackerrank|codesignal|hirevue)/i.test(name))
+    return name;
   if (domain && !isPlatformDomain(domain)) {
     const root = rootDomain(domain).split(".")[0];
     return root.charAt(0).toUpperCase() + root.slice(1);
@@ -214,7 +245,8 @@ export function classifyHeuristic(email: RawEmail): Classification {
   let category: Category = "update_other";
   let confidence = 0.6;
 
-  if (RX.notRecruiting.test(text)) {
+  const massMail = (email.bulk || RX.newsletter.test(text)) && !RX.personal.test(text);
+  if (RX.notRecruiting.test(text) || massMail) {
     category = "not_recruiting";
     confidence = 0.8;
   } else if (RX.offer.test(text)) {
